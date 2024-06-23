@@ -33,13 +33,6 @@ class ExampleMenuItem(MenuItemHook):
         return ""
 
 
-@hooks.register("menu_item_hook")
-def register_menu():
-    """Register the menu item"""
-
-    return ExampleMenuItem()
-
-
 @hooks.register("url_hook")
 def register_urls():
     """Register app urls"""
