@@ -1,7 +1,6 @@
 from django.core.management.base import BaseCommand
 
 from lawn_stats.models import (
-    CSVColumnMapping,
     MonthlyCorpStats,
     MonthlyCreatorStats,
     MonthlyFleetType,
@@ -28,7 +27,6 @@ class Command(BaseCommand):
         MonthlyUserStats.objects.filter(month=month, year=year).delete()
         MonthlyCreatorStats.objects.filter(month=month, year=year).delete()
         MonthlyFleetType.objects.filter(month=month, year=year).delete()
-        CSVColumnMapping.objects.filter(month=month, year=year).delete()
 
         self.stdout.write(
             self.style.SUCCESS(f"Successfully cleared data for {month}-{year}")
