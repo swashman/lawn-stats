@@ -21,19 +21,19 @@ class General(models.Model):
 
 
 class MonthlyStats(models.Model):
-    account = models.CharField(max_length=254)
-    beehive = models.IntegerField()
-    corp = models.IntegerField()
-    cricket = models.IntegerField()
-    gsol = models.IntegerField()
-    incursion_hq = models.IntegerField()
-    incursion_vg = models.IntegerField()
-    locust = models.IntegerField()
-    peacetime = models.IntegerField()
-    scouts = models.IntegerField()
-    sig_squad = models.IntegerField()
-    strategic = models.IntegerField()
-    month = models.DateField()
+    account = models.CharField(max_length=100)
+    beehive = models.IntegerField(default=0)
+    locust = models.IntegerField(default=0)
+    incursion = models.IntegerField(default=0)
+    peacetime = models.IntegerField(default=0)
+    scouts = models.IntegerField(default=0)
+    sig_squad = models.IntegerField(default=0)
+    strategic = models.IntegerField(default=0)
+    year = models.IntegerField()
+    month = models.IntegerField()
+
+    class Meta:
+        unique_together = (("account", "year", "month"),)
 
 
 # LAWN SECONDARY MODELS
