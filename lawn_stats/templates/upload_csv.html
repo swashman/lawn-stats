@@ -1,17 +1,7 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Upload CSV</title>
-</head>
-<body>
-    <h1>Upload CSV</h1>
-    <form method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        <input type="file" name="csv_file">
-        <button type="submit">Upload</button>
-    </form>
-    {% if uploaded_file_url %}
-        <p>File uploaded successfully: <a href="{{ uploaded_file_url }}">{{ uploaded_file_url }}</a></p>
-    {% endif %}
-</body>
-</html>
+<!-- templates/upload_csv.html -->
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Upload</button>
+</form>

@@ -1,12 +1,25 @@
+# forms.py
+
+from datetime import datetime
+
 from django import forms
-from django.utils.timezone import datetime
 
 
-class MonthYearForm(forms.Form):
-    month = forms.ChoiceField(
-        choices=[(i, i) for i in range(1, 13)], initial=datetime.now().month
+class CSVUploadForm(forms.Form):
+    csv_file = forms.FileField()
+    current_date = datetime.now()
+    initial_month = current_date.month - 1 if current_date.month > 1 else 12
+    initial_year = (
+        current_date.year if current_date.month > 1 else current_date.year - 1
     )
-    year = forms.ChoiceField(
-        choices=[(i, i) for i in range(2020, datetime.now().year + 1)],
-        initial=datetime.now().year,
-    )
+    month = forms.IntegerField(initial=initial_month)
+    year = forms.IntegerField(initial=initial_year)
+
+
+class ColumnMappingForm(forms.Form):
+    # Dynamically create fields for mapping columns
+    def __init__(self, *args, **kwargs):
+        columns = kwargs.pop("columns")
+        super().__init__(*args, **kwargs)
+        for column in columns:
+            self.fields[column] = forms.CharField(max_length=100, required=False)

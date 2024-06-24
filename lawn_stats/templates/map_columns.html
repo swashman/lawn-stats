@@ -1,0 +1,7 @@
+<!-- templates/map_columns.html -->
+
+<form method="post" action="{% url 'lawn_stats:map_columns' %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Map Columns</button>
+</form>
