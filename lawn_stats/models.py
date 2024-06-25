@@ -92,6 +92,14 @@ class MonthlyCreatorStats(models.Model):
         return AuthUser.objects.get(pk=self.creator_id)
 
 
+class UnknownAccount(models.Model):
+    account_name = models.CharField(max_length=255, unique=True)
+    user_id = models.IntegerField(null=True, blank=True)
+
+    def __str__(self):
+        return self.account_name
+
+
 # LAWN SECONDARY MODELS
 ################################################################
 

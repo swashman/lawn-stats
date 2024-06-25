@@ -8,11 +8,13 @@ from allianceauth.services.hooks import get_extension_logger
 
 from .models import (
     AuthenticationCharacterownership,
+    AuthUser,
     EveonlineEvecharacter,
     EveonlineEvecorporationinfo,
     MonthlyCorpStats,
     MonthlyFleetType,
     MonthlyUserStats,
+    UnknownAccount,
 )
 
 logger = get_extension_logger(__name__)
@@ -21,8 +23,6 @@ logger = get_extension_logger(__name__)
 @shared_task
 def process_csv_task(csv_data, column_mapping, month, year):
     reader = csv.DictReader(csv_data)
-
-    unknown_accounts = []
 
     for row in reader:
         try:
@@ -42,12 +42,22 @@ def process_csv_task(csv_data, column_mapping, month, year):
             AuthenticationCharacterownership.DoesNotExist,
             EveonlineEvecorporationinfo.DoesNotExist,
         ):
-            unknown_accounts.append(account_name)
-            continue
+            # Handle unknown account
+            unknown_account, created = UnknownAccount.objects.get_or_create(
+                account_name=account_name
+            )
+            if unknown_account.user_id:
+                user = AuthUser.objects.get(id=unknown_account.user_id)
+                corporation = user.profile.main_character.corporation
+            else:
+                continue
 
         for column, fleet_type_name in column_mapping.items():
             if column in row and row[column]:
                 total_fats = int(row[column])
+
+                if total_fats == 0:
+                    continue
 
                 fleet_type, created = MonthlyFleetType.objects.get_or_create(
                     name=fleet_type_name,
@@ -80,6 +90,3 @@ def process_csv_task(csv_data, column_mapping, month, year):
                 if not created:
                     corp_stats.total_fats += total_fats
                     corp_stats.save()
-
-    if unknown_accounts:
-        logger.warning(f"Unknown accounts: {', '.join(unknown_accounts)}")
