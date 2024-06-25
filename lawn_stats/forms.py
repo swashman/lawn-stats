@@ -46,3 +46,10 @@ class ColumnMappingForm(forms.Form):
                 initial=initial.get(f"ignore_{column}", False),
                 widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
             )
+
+
+class MonthYearForm(forms.Form):
+    month = forms.IntegerField(min_value=1, max_value=12, initial=datetime.now().month)
+    year = forms.IntegerField(
+        min_value=2000, max_value=datetime.now().year, initial=datetime.now().year
+    )

@@ -7,11 +7,26 @@ from django.shortcuts import redirect, render
 
 from allianceauth.services.hooks import get_extension_logger
 
-from .forms import ColumnMappingForm, CSVUploadForm
+from .forms import ColumnMappingForm, CSVUploadForm, MonthYearForm
 from .models import CSVColumnMapping, IgnoredCSVColumns
-from .tasks import process_csv_task
+from .tasks import process_afat_data_task, process_csv_task
 
 logger = get_extension_logger(__name__)
+
+
+def upload_afat_data(request):
+    if request.method == "POST":
+        form = MonthYearForm(request.POST)
+        if form.is_valid():
+            month = form.cleaned_data["month"]
+            year = form.cleaned_data["year"]
+
+            # Trigger the Celery task
+            process_afat_data_task.delay(month, year)
+            return HttpResponse("AFAT data is being processed.")
+    else:
+        form = MonthYearForm()
+    return render(request, "upload_afat_data.html", {"form": form})
 
 
 def upload_csv(request):

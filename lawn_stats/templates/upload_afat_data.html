@@ -1,0 +1,21 @@
+<!-- templates/upload_afat_data.html -->
+
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload AFAT Data</title>
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+</head>
+<body>
+<div class="container">
+    <h2>Upload AFAT Data</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+</div>
+<script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
+</body>
+</html>
