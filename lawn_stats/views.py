@@ -56,7 +56,11 @@ def upload_csv(request):
             request.session["csv_data"] = decoded_file
             request.session["month"] = month
             request.session["year"] = year
-            return render(request, "map_columns.html", {"form": column_form})
+            return render(
+                request,
+                "map_columns.html",
+                {"form": column_form, "columns": columns_to_map},
+            )
     else:
         form = CSVUploadForm()
     return render(request, "upload_csv.html", {"form": form})

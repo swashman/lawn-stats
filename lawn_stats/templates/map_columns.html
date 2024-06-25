@@ -1,7 +1,58 @@
 <!-- templates/map_columns.html -->
 
-<form method="post" action="{% url 'lawn_stats:map_columns' %}">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Map Columns</button>
-</form>
+{% load static %}
+{% load form_filters %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Column Mapping</title>
+    <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+    <style>
+        .form-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .form-row label {
+            flex: 1;
+            text-align: left;  /* Align labels to the left */
+            margin-right: 10px;  /* Add some space between label and input */
+        }
+        .form-row .form-control {
+            flex: 2;
+            max-width: 300px;  /* Adjust the max-width as needed */
+        }
+        .form-row .form-check {
+            margin-left: 10px;
+        }
+        .form-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;  /* Align the entire form container to the left */
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Map Columns</h2>
+    <div class="form-container">
+        <form method="post" action="{% url 'lawn_stats:map_columns' %}">
+            {% csrf_token %}
+            {% for column in columns %}
+                <div class="form-row">
+                    <label for="{{ form|get_field:column|get_field_id }}">{{ column }}</label>
+                    {{ form|get_field:column }}
+                    <div class="form-check">
+                        {{ form|get_ignore_field:column }}
+                        <label class="form-check-label" for="{{ form|get_ignore_field:column|get_field_id }}">Ignore</label>
+                    </div>
+                </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </form>
+    </div>
+</div>
+<script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
+</body>
+</html>
