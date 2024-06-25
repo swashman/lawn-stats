@@ -8,7 +8,7 @@ from django.shortcuts import redirect, render
 from allianceauth.services.hooks import get_extension_logger
 
 from .forms import ColumnMappingForm, CSVUploadForm
-from .models import CSVColumnMapping
+from .models import CSVColumnMapping, IgnoredCSVColumns
 from .tasks import process_csv_task
 
 logger = get_extension_logger(__name__)
@@ -27,12 +27,17 @@ def upload_csv(request):
             reader = csv.reader(decoded_file)
             columns = next(reader)
 
-            # Remove 'Account' column from columns to be mapped
+            # Remove 'Account' column from columns to be mapped and filter out empty columns
+            ignored_columns = IgnoredCSVColumns.objects.values_list(
+                "column_name", flat=True
+            )
             columns_to_map = [
-                col.strip() for col in columns if col.strip() != "Account"
+                col.strip()
+                for col in columns
+                if col.strip()
+                and col.strip() not in ignored_columns
+                and col.strip() != "Account"
             ]
-
-            # Log the columns to verify correct reading
 
             # Render the column mapping form
             column_form = ColumnMappingForm(columns=columns_to_map)
@@ -51,20 +56,24 @@ def map_columns(request):
         month = request.session["month"]
         year = request.session["year"]
         columns_to_map = [
-            col.strip() for col in csv_data[0].split(",") if col.strip() != "Account"
+            col.strip()
+            for col in csv_data[0].split(",")
+            if col.strip() and col.strip() != "Account"
         ]
         form = ColumnMappingForm(request.POST, columns=columns_to_map)
         if form.is_valid():
-            column_mapping = {
-                column: form.cleaned_data[column] for column in form.fields
-            }
+            column_mapping = {}
+            ignored_columns = []
 
-            # Filter out empty mappings
-            column_mapping = {
-                column: mapped_to
-                for column, mapped_to in column_mapping.items()
-                if mapped_to
-            }
+            # Clear existing mappings
+            CSVColumnMapping.objects.all().delete()
+
+            for column in columns_to_map:
+                if form.cleaned_data[f"ignore_{column}"]:
+                    ignored_columns.append(column)
+                    IgnoredCSVColumns.objects.get_or_create(column_name=column)
+                elif form.cleaned_data[column]:
+                    column_mapping[column] = form.cleaned_data[column]
 
             # Store column mappings in the database
             for column, mapped_to in column_mapping.items():
