@@ -39,8 +39,20 @@ def upload_csv(request):
                 and col.strip() != "Account"
             ]
 
+            # Fetch previous mappings
+            previous_mappings = CSVColumnMapping.objects.all()
+            initial_data = {}
+            for mapping in previous_mappings:
+                initial_data[mapping.column_name] = mapping.mapped_to
+                initial_data[f"ignore_{mapping.column_name}"] = False
+
+            for ignored in ignored_columns:
+                initial_data[f"ignore_{ignored}"] = True
+
             # Render the column mapping form
-            column_form = ColumnMappingForm(columns=columns_to_map)
+            column_form = ColumnMappingForm(
+                columns=columns_to_map, initial=initial_data
+            )
             request.session["csv_data"] = decoded_file
             request.session["month"] = month
             request.session["year"] = year

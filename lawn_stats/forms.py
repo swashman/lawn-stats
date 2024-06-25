@@ -19,9 +19,14 @@ class CSVUploadForm(forms.Form):
 class ColumnMappingForm(forms.Form):
     def __init__(self, *args, **kwargs):
         columns = kwargs.pop("columns")
+        initial = kwargs.pop("initial", {})
         super().__init__(*args, **kwargs)
         for column in columns:
-            self.fields[column] = forms.CharField(max_length=100, required=False)
+            self.fields[column] = forms.CharField(
+                max_length=100, required=False, initial=initial.get(column)
+            )
             self.fields[f"ignore_{column}"] = forms.BooleanField(
-                required=False, label="Ignore"
+                required=False,
+                label="Ignore",
+                initial=initial.get(f"ignore_{column}", False),
             )

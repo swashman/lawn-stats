@@ -22,6 +22,14 @@ logger = get_extension_logger(__name__)
 
 @shared_task
 def process_csv_task(csv_data, column_mapping, month, year):
+    # Check for existing data for the given month and year
+    if (
+        MonthlyUserStats.objects.filter(month=month, year=year).exists()
+        or MonthlyCorpStats.objects.filter(month=month, year=year).exists()
+    ):
+        logger.warning(f"Data for {month}/{year} already exists. Skipping processing.")
+        return
+
     reader = csv.DictReader(csv_data)
 
     for row in reader:
