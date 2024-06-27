@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creator Charts</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container mt-3">
+        <h2>Creator Charts</h2>
+
+        <!-- Form to select month and year -->
+        <form method="get" action="{% url 'lawn_stats:creator_charts' %}" class="form-inline mb-3">
+            <label for="month" class="mr-2">Month:</label>
+            <select name="month" id="month" class="form-control mr-2">
+                {% for i in months %}
+                    <option value="{{ i }}" {% if i == month %}selected{% endif %}>{{ i }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="year" class="mr-2">Year:</label>
+            <select name="year" id="year" class="form-control mr-2">
+                {% for i in years %}
+                    <option value="{{ i }}" {% if i == year %}selected{% endif %}>{{ i }}</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit" class="btn btn-primary">Update</button>
+        </form>
+
+        {% if bar_chart or pie_chart %}
+            <div class="chart">
+                <h3>Fleet Types By FC</h3>
+                <img src="data:image/png;base64,{{ bar_chart }}" alt="Stacked Bar Chart">
+            </div>
+            <div class="chart mt-5">
+                <h3>Fleet Type Proportions</h3>
+                <img src="data:image/png;base64,{{ pie_chart }}" alt="Pie Chart">
+            </div>
+        {% else %}
+            <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

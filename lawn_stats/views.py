@@ -1,15 +1,28 @@
-# views.py
-
+import base64
 import csv
+from datetime import datetime  # Correct import
+from io import BytesIO
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from django.db.models import Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 
 from allianceauth.services.hooks import get_extension_logger
 
 from .forms import ColumnMappingForm, CSVUploadForm, MonthYearForm
-from .models import CSVColumnMapping, IgnoredCSVColumns
+from .models import (
+    CSVColumnMapping,
+    IgnoredCSVColumns,
+    MonthlyCreatorStats,
+    MonthlyFleetType,
+)
 from .tasks import process_afat_data_task, process_csv_task
+
+logger = get_extension_logger(__name__)
 
 logger = get_extension_logger(__name__)
 
@@ -118,3 +131,120 @@ def map_columns(request):
             logger.debug(f"Form errors: {form.errors}")
             logger.debug(f"Form data: {request.POST}")
     return redirect("upload_csv")
+
+
+def creator_charts(request):
+    # Get month and year from request GET parameters, default to current month and year if not provided
+    month = request.GET.get("month", datetime.now().month)
+    year = request.GET.get("year", datetime.now().year)
+
+    # Convert month and year to integers
+    month = int(month)
+    year = int(year)
+
+    # Generate list of months and years for the dropdowns
+    months = range(1, 13)
+    current_year = datetime.now().year
+    years = range(2023, current_year + 1)
+
+    # Query data from MonthlyCreatorStats
+    stats = MonthlyCreatorStats.objects.filter(month=month, year=year)
+    fleet_types = MonthlyFleetType.objects.filter(source="afat")
+
+    # Prepare data for the stacked bar chart
+    creators = list(
+        {stat.get_creator().profile.main_character.character_name for stat in stats}
+    )
+    data = {fleet_type.name: [0] * len(creators) for fleet_type in fleet_types}
+    for stat in stats:
+        if stat.fleet_type.source == "afat":
+            creator_name = stat.get_creator().profile.main_character.character_name
+            data[stat.fleet_type.name][
+                creators.index(creator_name)
+            ] += stat.total_created
+
+    df = pd.DataFrame(data, index=creators)
+    df = df.sort_index()  # Sort the DataFrame by the alphabetical name of the creators
+
+    # Initialize base64 strings
+    image_base64 = ""
+    pie_image_base64 = ""
+
+    if not df.empty:
+        # Remove columns with all zeros
+        df = df.loc[:, (df != 0).any(axis=0)]
+
+        if not df.empty:
+            # Create the stacked bar chart with colormap
+            colormap = plt.cm.viridis  # Use a colormap like 'viridis'
+            color_range = colormap(np.linspace(0, 1, len(df.columns)))
+
+            plt.figure(figsize=(12, 8))
+            df.plot(kind="bar", stacked=True, figsize=(12, 8), color=color_range)
+            plt.xlabel("Creators")
+            plt.ylabel("Total Created")
+            plt.title(f"Fleet Types By FC for {month}/{year}")
+            plt.xticks(rotation=45, ha="right")
+            plt.legend(title="Fleet Type")
+            plt.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
+            plt.tight_layout()
+
+            # Save the bar chart to a string buffer
+            buf = BytesIO()
+            plt.savefig(buf, format="png")
+            buf.seek(0)
+            image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+            buf.close()
+            plt.clf()
+
+        # Prepare data for the pie chart
+        total_created_by_fleet = (
+            stats.filter(fleet_type__source="afat")
+            .values("fleet_type__name")
+            .annotate(total_created=Sum("total_created"))
+            .order_by()
+        )
+        fleet_types = [item["fleet_type__name"] for item in total_created_by_fleet]
+        proportions = [item["total_created"] for item in total_created_by_fleet]
+
+        if proportions:
+            # Create the pie chart with colormap
+            pie_color_range = colormap(np.linspace(0, 1, len(fleet_types)))
+
+            plt.figure(figsize=(8, 8))
+            wedges, texts, autotexts = plt.pie(
+                proportions,
+                autopct="%1.1f%%",
+                startangle=140,
+                colors=pie_color_range,
+            )
+            plt.legend(
+                wedges,
+                fleet_types,
+                title="Fleet Type",
+                loc="center left",
+                bbox_to_anchor=(1, 0, 0.5, 1),
+            )
+            plt.title(f"Fleet Type Proportions for {month}/{year}")
+            plt.tight_layout()
+
+            # Save the pie chart to a string buffer
+            buf = BytesIO()
+            plt.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            pie_image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+            buf.close()
+            plt.clf()
+
+    return render(
+        request,
+        "charts/creator_charts.html",
+        {
+            "bar_chart": image_base64,
+            "pie_chart": pie_image_base64,
+            "month": month,
+            "year": year,
+            "months": months,
+            "years": years,
+        },
+    )

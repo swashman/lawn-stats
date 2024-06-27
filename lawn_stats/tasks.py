@@ -12,6 +12,7 @@ from allianceauth.services.hooks import get_extension_logger
 
 from .models import (
     AfatFat,
+    AfatFatlink,
     AfatFleettype,
     AuthenticationCharacterownership,
     AuthenticationUserprofile,
@@ -19,6 +20,7 @@ from .models import (
     EveonlineEvecharacter,
     EveonlineEvecorporationinfo,
     MonthlyCorpStats,
+    MonthlyCreatorStats,
     MonthlyFleetType,
     MonthlyUserStats,
     UnknownAccount,
@@ -221,6 +223,54 @@ def process_afat_data_task(month, year):
                     )
         except IntegrityError as e:
             logger.error(
-                f"IntegrityError processing user ID {user.id}, corporation ID {corporation.corporation_id}, and fleet type {fleet_type_name}: {e}"
+                f"IntegrityError: user ID {user.id}, corp ID {corporation.corporation_id}, and {fleet_type_name}: {e}"
+            )
+            continue
+
+    # Process creator stats
+    process_creator_stats(month, year)
+
+
+@shared_task
+def process_creator_stats(month, year):
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year, month + 1, 1) if month < 12 else datetime(year + 1, 1, 1)
+
+    afat_fatlinks = AfatFatlink.objects.filter(
+        created__gte=start_date, created__lt=end_date
+    )
+
+    for fatlink in afat_fatlinks:
+        creator = fatlink.creator
+        fleet_type_name = fatlink.link_type.name if fatlink.link_type else "Unknown"
+
+        fleet_type = MonthlyFleetType.objects.get(
+            name=fleet_type_name,
+            source="afat",
+            month=month,
+            year=year,
+        )
+
+        try:
+            with transaction.atomic():
+                # Check for existing creator stats entry before attempting to create or update
+                existing_creator_stats = MonthlyCreatorStats.objects.filter(
+                    creator_id=creator.id, month=month, year=year, fleet_type=fleet_type
+                ).first()
+
+                if existing_creator_stats:
+                    existing_creator_stats.total_created += 1
+                    existing_creator_stats.save()
+                else:
+                    MonthlyCreatorStats.objects.create(
+                        creator_id=creator.id,
+                        month=month,
+                        year=year,
+                        fleet_type=fleet_type,
+                        total_created=1,
+                    )
+        except IntegrityError as e:
+            logger.error(
+                f"IntegrityError processing creator ID {creator.id}, and fleet type {fleet_type_name}: {e}"
             )
             continue
