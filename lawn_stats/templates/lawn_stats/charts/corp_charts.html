@@ -1,0 +1,8 @@
+<div class="container mt-3">
+    {% for corp_name, chart in corp_charts.items %}
+    <div class="chart mt-5">
+        <h3>{{ corp_name }}</h3>
+        <img src="data:image/png;base64,{{ chart }}" alt="{{ corp_name }} Chart" class="img-fluid">
+    </div>
+    {% endfor %}
+</div>

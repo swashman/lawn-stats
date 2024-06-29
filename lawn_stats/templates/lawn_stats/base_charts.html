@@ -31,6 +31,9 @@
         <li class="nav-item">
             <a class="nav-link" id="alliance-charts-tab" data-bs-toggle="tab" href="#alliance-charts" role="tab" aria-controls="alliance-charts" aria-selected="false">Alliance Charts</a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" id="corp-charts-tab" data-bs-toggle="tab" href="#corp-charts" role="tab" aria-controls="corp-charts" aria-selected="false">Corp Charts</a>
+        </li>
     </ul>
     <div class="tab-content w-100" id="chartTabsContent">
         <div class="tab-pane fade show active" id="creator-charts" role="tabpanel" aria-labelledby="creator-charts-tab">
@@ -38,6 +41,9 @@
         </div>
         <div class="tab-pane fade" id="alliance-charts" role="tabpanel" aria-labelledby="alliance-charts-tab">
             {% include 'lawn_stats/charts/alliance_charts.html' %}
+        </div>
+        <div class="tab-pane fade" id="corp-charts" role="tabpanel" aria-labelledby="corp-charts-tab">
+            {% include 'lawn_stats/charts/corp_charts.html' %}
         </div>
     </div>
 </div>

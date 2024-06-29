@@ -20,6 +20,7 @@ from .forms import ColumnMappingForm, CSVUploadForm, MonthYearForm
 
 # from .models import CorputilsCorpstats as CorpStats
 from .models import (
+    AuthenticationUserprofile,
     CSVColumnMapping,
     EveonlineEveallianceinfo,
     EveonlineEvecorporationinfo,
@@ -27,6 +28,7 @@ from .models import (
     MonthlyCorpStats,
     MonthlyCreatorStats,
     MonthlyFleetType,
+    MonthlyUserStats,
 )
 from .tasks import process_afat_data_task, process_csv_task
 
@@ -189,6 +191,8 @@ def all_charts(request):
     creator_charts_data = creator_charts(month, year)
     # fetch alliance charts data
     alliance_charts_data = alliance_charts(month, year)
+    # fetch corp charts data
+    corp_charts_data = corp_charts(month, year)
 
     # Prepare context
     context = {
@@ -198,6 +202,7 @@ def all_charts(request):
         "selected_year": year,
         "creator_charts_data": creator_charts_data,
         "alliance_charts": alliance_charts_data,
+        "corp_charts": corp_charts_data,
         "show_forward": show_forward,
     }
 
@@ -719,3 +724,60 @@ def alliance_charts(month, year):
         "line_chart": line_chart,
         "relative_chart": relative_chart,
     }
+
+
+def corp_charts(month, year):
+    ally = EveonlineEveallianceinfo.objects.get(alliance_id=settings.STATS_ALLIANCE_ID)
+    all_corps = EveonlineEvecorporationinfo.objects.filter(alliance=ally).exclude(
+        corporation_id__in=settings.STATS_IGNORE_CORPS
+    )
+
+    charts_data = {}
+
+    for corp in all_corps:
+        corp_members = AuthenticationUserprofile.objects.filter(
+            main_character__corporation_id=corp.corporation_id
+        )
+
+        users = [member.main_character.character_name for member in corp_members]
+        user_ids = [member.user_id for member in corp_members]
+
+        stats = MonthlyUserStats.objects.filter(
+            user_id__in=user_ids, month=month, year=year
+        ).select_related("fleet_type")
+
+        data = {
+            fleet_type.name: [0] * len(users)
+            for fleet_type in MonthlyFleetType.objects.all()
+        }
+
+        for stat in stats:
+            character_name = stat.get_user().profile.main_character.character_name
+            data[stat.fleet_type.name][users.index(character_name)] += stat.total_fats
+
+        df = pd.DataFrame(data, index=users)
+        df = df.sort_index()
+
+        if not df.empty:
+            colormap = plt.cm.viridis
+            color_range = colormap(np.linspace(0, 1, len(df.columns)))
+
+            plt.figure(figsize=(12, 8))
+            df.plot(kind="bar", stacked=True, figsize=(12, 8), color=color_range)
+            plt.title(f"{corp.corporation_name} Player Breakdown of Fat Types")
+            plt.ylabel("Total Fats")
+            plt.xlabel("Users")
+            plt.xticks(rotation=45, ha="right")
+            plt.tight_layout()
+
+            buf = BytesIO()
+            plt.savefig(buf, format="png")
+            buf.seek(0)
+            charts_data[corp.corporation_name] = base64.b64encode(buf.read()).decode(
+                "utf-8"
+            )
+            buf.close()
+            plt.clf()
+            plt.close()
+
+    return charts_data
