@@ -36,6 +36,9 @@ dynamic = [
 ]
 dependencies = [
     "allianceauth<5.0.0,>=4",
+    "matplotlib",
+    "numpy",
+    "pandas",
 ]
 [project.urls]
 Documentation = "https://github.com/swashman/lawn-stats#readme"
