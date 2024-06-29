@@ -31,12 +31,18 @@ logger = get_extension_logger(__name__)
 
 @shared_task
 def process_csv_task(csv_data, column_mapping, month, year):
-    # Check for existing data for the given month and year
-    if (
-        MonthlyUserStats.objects.filter(month=month, year=year).exists()
-        or MonthlyCorpStats.objects.filter(month=month, year=year).exists()
-    ):
+    user_stats_exists = MonthlyUserStats.objects.filter(
+        month=month, year=year, fleet_type__source="imp"
+    ).exists()
+    corp_stats_exists = MonthlyCorpStats.objects.filter(
+        month=month, year=year, fleet_type__source="imp"
+    ).exists()
+
+    if user_stats_exists or corp_stats_exists:
         logger.warning(f"Data for {month}/{year} already exists. Skipping processing.")
+        logger.debug(
+            f"User stats exist: {user_stats_exists}, Corp stats exist: {corp_stats_exists}"
+        )
         return
 
     reader = csv.DictReader(csv_data)
@@ -112,14 +118,18 @@ def process_csv_task(csv_data, column_mapping, month, year):
 @shared_task
 def process_afat_data_task(month, year):
     # Check for existing data for the given month and year
-    if (
-        MonthlyUserStats.objects.filter(
-            month=month, year=year, fleet_type__source="afat"
-        ).exists()
-        or MonthlyCorpStats.objects.filter(
-            month=month, year=year, fleet_type__source="afat"
-        ).exists()
-    ):
+    user_stats_exists = MonthlyUserStats.objects.filter(
+        month=month, year=year, fleet_type__source="afat"
+    ).exists()
+    corp_stats_exists = MonthlyCorpStats.objects.filter(
+        month=month, year=year, fleet_type__source="afat"
+    ).exists()
+
+    if user_stats_exists or corp_stats_exists:
+        logger.warning(f"Data for {month}/{year} already exists. Skipping processing.")
+        logger.debug(
+            f"User stats exist: {user_stats_exists}, Corp stats exist: {corp_stats_exists}"
+        )
         return
 
     start_date = datetime(year, month, 1)

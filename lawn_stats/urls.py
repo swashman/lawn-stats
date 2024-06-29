@@ -9,4 +9,5 @@ urlpatterns = [
     path("map_columns/", views.map_columns, name="map_columns"),
     path("upload_afat_data/", views.upload_afat_data, name="upload_afat_data"),
     path("creator_charts/", views.creator_charts, name="creator_charts"),
+    path("all_charts/", views.all_charts, name="all_charts"),
 ]

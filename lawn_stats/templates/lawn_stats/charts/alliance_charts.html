@@ -1,0 +1,44 @@
+<div class="container mt-3">
+    <div class="chart">
+        {% if alliance_charts.combined_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.combined_chart }}" alt="Combined Fleet Totals" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart mt-5">
+        {% if alliance_charts.relative_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.relative_chart }}" alt="Relative Participation" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart  mt-5">
+        {% if alliance_charts.afat_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.afat_chart }}" alt="AFAT Fleet Totals" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart mt-5">
+        {% if alliance_charts.imp_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.imp_chart }}" alt="IMP Fleet Totals" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart mt-5">
+        {% if alliance_charts.pie_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.pie_chart }}" alt="AFAT Fleet Type Proportions" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart mt-5">
+        {% if alliance_charts.line_chart %}
+        <img src="data:image/png;base64,{{ alliance_charts.line_chart }}" alt="AFAT Total Fats Over Time" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+</div>

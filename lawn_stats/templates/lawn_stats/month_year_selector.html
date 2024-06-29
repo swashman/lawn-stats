@@ -1,0 +1,9 @@
+<form method="GET" action="{% url 'lawn_stats:all_charts' %}" class="d-flex justify-content-center align-items-center">
+    <button type="submit" name="prev_year" class="btn btn-primary">&laquo;</button>
+    <button type="submit" name="prev_month" class="btn btn-primary">&lsaquo;</button>
+    <span class="mx-3">{{ selected_month }} {{ selected_year }}</span>
+    <button type="submit" name="next_month" class="btn btn-primary">&rsaquo;</button>
+    <button type="submit" name="next_year" class="btn btn-primary">&raquo;</button>
+    <input type="hidden" name="month" value="{{ month }}">
+    <input type="hidden" name="year" value="{{ year }}">
+</form>

@@ -5,8 +5,25 @@ Create your models in here
 
 from typing import Union
 
+from django.core.exceptions import ObjectDoesNotExist
+
 # Django
 from django.db import models
+
+from allianceauth.services.hooks import ServicesHook, get_extension_logger
+
+logger = get_extension_logger(__name__)
+SERVICE_DB = {
+    "mumble": "mumble",
+    "smf": "smf",
+    "discord": "discord",
+    "discorse": "discourse",
+    "Wiki JS": "wikijs",
+    "ips4": "ips4",
+    "openfire": "openfire",
+    "phpbb3": "phpbb3",
+    "teamspeak3": "teamspeak3",
+}
 
 
 class General(models.Model):
@@ -42,7 +59,9 @@ class MonthlyCorpStats(models.Model):
 
     def get_corporation(self):
 
-        return EveonlineEvecorporationinfo.objects.get(pk=self.corporation_id)
+        return EveonlineEvecorporationinfo.objects.get(
+            corporation_id=self.corporation_id
+        )
 
 
 class MonthlyUserStats(models.Model):
@@ -63,6 +82,14 @@ class MonthlyUserStats(models.Model):
     def get_corporation(self):
 
         return EveonlineEvecorporationinfo.objects.get(pk=self.corporation_id)
+
+
+class FleetTypeLimit(models.Model):
+    name = models.CharField(max_length=100)
+    limit = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.name}: {self.limit}"
 
 
 class CSVColumnMapping(models.Model):
@@ -317,3 +344,254 @@ class EveonlineEvecharacter(models.Model):
         return EveonlineEvecorporationinfo.objects.get(
             corporation_id=self.corporation_id
         )
+
+
+class CorpstatsCorpstat(models.Model):
+    last_update = models.DateTimeField()
+    corp = models.OneToOneField("EveonlineEvecorporationinfo", models.DO_NOTHING)
+    token = models.ForeignKey("EsiToken", models.DO_NOTHING)
+
+    class Meta:
+        managed = False
+        db_table = "corpstats_corpstat"
+        app_label = "secondary_app"
+
+    def get_stats(self):
+        """
+        return all corpstats for corp
+
+        :return:
+        Mains with Alts Dict
+        Members List[EveCharacter]
+        Un-registered QuerySet[CorpMember]
+        """
+
+        linked_chars = EveonlineEvecharacter.objects.filter(
+            corporation_id=self.corp.corporation_id
+        )  # get all authenticated characters in corp from auth internals
+        linked_chars = linked_chars | EveonlineEvecharacter.objects.filter(
+            character_ownership__user__profile__main_character__corporation_id=self.corp.corporation_id
+        )  # add all alts for characters in corp
+
+        services = [svc.name for svc in ServicesHook.get_services()]  # services list
+
+        linked_chars = linked_chars.select_related(
+            "character_ownership", "character_ownership__user__profile__main_character"
+        ).prefetch_related("character_ownership__user__character_ownerships")
+        skiped_services = []
+        for service in services:
+            if service in SERVICE_DB:
+                linked_chars = linked_chars.select_related(
+                    f"character_ownership__user__{SERVICE_DB[service]}"
+                )
+            else:
+                skiped_services.append(service)
+                logger.error(f"Unknown Service {service} Skipping")
+
+        for service in skiped_services:
+            services.remove(service)
+
+        linked_chars = linked_chars.order_by("character_name")  # order by name
+
+        members = []  # member list
+        orphans = []  # orphan list
+        alt_count = 0  #
+        services_count = {}  # for the stats
+        for service in services:
+            services_count[service] = 0  # prefill
+
+        mains = {}  # main list
+        temp_ids = []  # filter out linked vs unreg'd
+        for char in linked_chars:
+            try:
+                main = (
+                    char.character_ownership.user.profile.main_character
+                )  # main from profile
+                if main is not None:
+                    if (
+                        main.corporation_id == self.corp.corporation_id
+                    ):  # iis this char in corp
+                        if main.character_id not in mains:  # add array
+                            mains[main.character_id] = {
+                                "main": main,
+                                "alts": [],
+                                "services": {},
+                            }
+                            for service in services:
+                                mains[main.character_id]["services"][
+                                    service
+                                ] = False  # pre fill
+
+                        if char.character_id == main.character_id:
+                            for service in services:
+                                try:
+                                    if hasattr(
+                                        char.character_ownership.user,
+                                        SERVICE_DB[service],
+                                    ):
+                                        mains[main.character_id]["services"][
+                                            service
+                                        ] = True
+                                        services_count[service] += 1
+                                except Exception as e:
+                                    logger.error(e)
+
+                        mains[main.character_id]["alts"].append(
+                            char
+                        )  # add to alt listing
+
+                    if char.corporation_id == self.corp.corporation_id:
+                        members.append(char)  # add to member listing as a known char
+                        if not char.character_id == main.character_id:
+                            alt_count += 1
+                        if main.corporation_id != self.corp.corporation_id:
+                            orphans.append(char)
+
+                    temp_ids.append(char.character_id)  # exclude from un-authed
+
+            except ObjectDoesNotExist:  # main not found we are unauthed
+                pass
+
+        unregistered = CorpstatsCorpmember.objects.filter(corpstats=self).exclude(
+            character_id__in=temp_ids
+        )  # filter corpstat list for unknowns
+        tracking = CorpstatsCorpmember.objects.filter(corpstats=self).filter(
+            character_id__in=temp_ids
+        )  # filter corpstat list for unknowns
+
+        # yay maths
+        total_mains = len(mains)
+        total_unreg = len(unregistered)
+        total_members = len(members) + total_unreg  # is unreg + known
+        # yay more math
+        auth_percent = len(members) / total_members * 100
+        alt_ratio = 0
+
+        try:
+            alt_ratio = total_mains / alt_count
+        except:
+            pass
+        # services
+        service_percent = {}
+        for service in services:
+            if service in SERVICE_DB:
+                try:
+                    service_percent[service] = {
+                        "cnt": services_count[service],
+                        "percent": services_count[service] / total_mains * 100,
+                    }
+                except Exception:
+                    service_percent[service] = {
+                        "cnt": services_count[service],
+                        "percent": 0,
+                    }
+
+        return (
+            members,
+            mains,
+            orphans,
+            unregistered,
+            total_mains,
+            total_unreg,
+            total_members,
+            auth_percent,
+            alt_ratio,
+            service_percent,
+            tracking,
+            services,
+        )
+
+
+class CorpstatsCorpmember(models.Model):
+    character_id = models.PositiveIntegerField()
+    character_name = models.CharField(max_length=50)
+    location_id = models.BigIntegerField(blank=True, null=True)
+    location_name = models.CharField(max_length=150, blank=True, null=True)
+    ship_type_id = models.PositiveIntegerField(blank=True, null=True)
+    ship_type_name = models.CharField(max_length=42, blank=True, null=True)
+    start_date = models.DateTimeField(blank=True, null=True)
+    logon_date = models.DateTimeField(blank=True, null=True)
+    logoff_date = models.DateTimeField(blank=True, null=True)
+    base_id = models.PositiveIntegerField(blank=True, null=True)
+    corpstats = models.ForeignKey("CorpstatsCorpstat", models.DO_NOTHING)
+
+    class Meta:
+        managed = False
+        db_table = "corpstats_corpmember"
+        unique_together = (("corpstats", "character_id"),)
+        app_label = "secondary_app"
+
+
+class CorputilsCorpstats(models.Model):
+    last_update = models.DateTimeField()
+    corp = models.OneToOneField("EveonlineEvecorporationinfo", models.DO_NOTHING)
+    token = models.ForeignKey("EsiToken", models.DO_NOTHING)
+
+    class Meta:
+        managed = False
+        db_table = "corputils_corpstats"
+        app_label = "secondary_app"
+
+    @property
+    def main_count(self):
+        return len(self.mains)
+
+    @property
+    def mains(self):
+        return self.members.filter(
+            pk__in=[
+                m.pk
+                for m in self.members.all()
+                if m.main_character
+                and int(m.main_character.character_id) == int(m.character_id)
+            ]
+        )
+
+
+class CorputilsCorpmember(models.Model):
+    character_id = models.PositiveIntegerField()
+    character_name = models.CharField(max_length=37)
+    corpstats = models.ForeignKey(
+        "CorputilsCorpstats", models.DO_NOTHING, related_name="members"
+    )
+
+    class Meta:
+        managed = False
+        db_table = "corputils_corpmember"
+        unique_together = (("corpstats", "character_id"),)
+        app_label = "secondary_app"
+
+    @property
+    def character(self):
+        try:
+            return EveonlineEvecharacter.objects.get(character_id=self.character_id)
+        except EveonlineEvecharacter.DoesNotExist:
+            return None
+
+    @property
+    def main_character(self):
+        try:
+            return self.character.character_ownership.user.profile.main_character
+        except (
+            AuthenticationCharacterownership.DoesNotExist,
+            AuthenticationUserprofile.DoesNotExist,
+            AttributeError,
+        ):
+            return None
+
+
+class EsiToken(models.Model):
+    created = models.DateTimeField()
+    access_token = models.TextField()
+    refresh_token = models.TextField(blank=True, null=True)
+    character_id = models.IntegerField()
+    character_name = models.CharField(max_length=100)
+    token_type = models.CharField(max_length=100)
+    character_owner_hash = models.CharField(max_length=254)
+    user = models.ForeignKey(AuthUser, models.DO_NOTHING, blank=True, null=True)
+    sso_version = models.IntegerField()
+
+    class Meta:
+        managed = False
+        db_table = "esi_token"
+        app_label = "secondary_app"

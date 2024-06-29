@@ -1,0 +1,17 @@
+<!-- Updated templates/lawn_stats/charts/creator_charts.html -->
+<div class="container mt-3">
+    <div class="chart">
+        {% if creator_charts_data.bar_chart %}
+        <img src="data:image/png;base64,{{ creator_charts_data.bar_chart }}" alt="Fleet Types By FC" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+    <div class="chart mt-5">
+        {% if creator_charts_data.pie_chart %}
+        <img src="data:image/png;base64,{{ creator_charts_data.pie_chart }}" alt="Fleet Type Proportions" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
+</div>

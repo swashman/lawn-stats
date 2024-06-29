@@ -1,0 +1,21 @@
+{% extends 'allianceauth/base-bs5.html' %}
+
+{% load i18n %}
+
+{% block page_title %}
+    {% translate "Lawn Stats" %}
+{% endblock %}
+
+{% block header_nav_brand %}
+    {% translate "Lawn Stats" %}
+{% endblock header_nav_brand %}
+
+{% block header_nav_collapse_left %}
+    {% include "lawn_stats/partials/top_menu.html" %}
+{% endblock %}
+
+{% block content %}
+    <div class="allianceauth-lawn-stats">
+        {% block lawn_stats_body %}{% endblock %}
+    </div>
+{% endblock %}
