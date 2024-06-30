@@ -34,6 +34,9 @@ from .tasks import process_afat_data_task, process_csv_task
 
 logger = get_extension_logger(__name__)
 
+CHART_BACKGROUND_COLOR = "#575555"
+months_to_display = 6
+
 
 def upload_afat_data(request):
     if request.method == "POST":
@@ -229,25 +232,25 @@ def creator_charts(month, year):
             ] += stat.total_created
 
     df = pd.DataFrame(data, index=creators)
-    df = df.sort_index()  # Sort the DataFrame by the alphabetical name of the creators
+    df = df.sort_index()
 
     # Initialize base64 strings
     image_base64 = ""
     pie_image_base64 = ""
+    line_chart_base64 = ""
 
     if not df.empty:
         # Remove columns with all zeros
         df = df.loc[:, (df != 0).any(axis=0)]
 
         if not df.empty:
-            # Create the stacked bar chart with colormap
-            colormap = plt.cm.viridis  # Use a colormap like 'viridis'
+            colormap = plt.cm.viridis
             color_range = colormap(np.linspace(0, 1, len(df.columns)))
 
             plt.figure(figsize=(12, 8))
             ax = df.plot(kind="bar", stacked=True, figsize=(12, 8), color=color_range)
-            ax.set_facecolor("#303030")  # Set axes background color
-            plt.gcf().set_facecolor("#303030")  # Set figure background color
+            ax.set_facecolor(CHART_BACKGROUND_COLOR)
+            plt.gcf().set_facecolor(CHART_BACKGROUND_COLOR)
             plt.ylabel("Total Created", color="lightgray")
             plt.title(
                 f"Fleet Types By FC for {month_name} {year}",
@@ -267,7 +270,6 @@ def creator_charts(month, year):
             plt.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
             plt.tight_layout()
 
-            # Save the bar chart to a string buffer
             buf = BytesIO()
             plt.savefig(buf, format="png")
             buf.seek(0)
@@ -276,18 +278,16 @@ def creator_charts(month, year):
             plt.clf()
             plt.close()
 
-        # Prepare data for the pie chart
         total_created_by_fleet = (
             stats.filter(fleet_type__source="afat")
             .values("fleet_type__name")
             .annotate(total_created=Sum("total_created"))
-            .order_by("fleet_type__name")  # Sort by fleet type name
+            .order_by("fleet_type__name")
         )
         fleet_types = [item["fleet_type__name"] for item in total_created_by_fleet]
         proportions = [item["total_created"] for item in total_created_by_fleet]
 
         if proportions:
-            # Create the pie chart with colormap
             pie_color_range = colormap(np.linspace(0, 1, len(fleet_types)))
 
             plt.figure(figsize=(8, 8))
@@ -296,11 +296,11 @@ def creator_charts(month, year):
                 autopct="%1.1f%%",
                 startangle=140,
                 colors=pie_color_range,
-                pctdistance=0.85,  # Adjust this value to move the labels further out
+                pctdistance=0.85,
             )
-            plt.setp(texts, color="white")  # Set label color
-            plt.setp(autotexts, color="black")  # Set autopct text color
-            plt.gcf().set_facecolor("#303030")  # Set figure background color
+            plt.setp(texts, color="white")
+            plt.setp(autotexts, color="black")
+            plt.gcf().set_facecolor(CHART_BACKGROUND_COLOR)
             plt.legend(
                 wedges,
                 fleet_types,
@@ -320,7 +320,6 @@ def creator_charts(month, year):
             )
             plt.tight_layout()
 
-            # Save the pie chart to a string buffer
             buf = BytesIO()
             plt.savefig(buf, format="png", bbox_inches="tight")
             buf.seek(0)
@@ -329,9 +328,86 @@ def creator_charts(month, year):
             plt.clf()
             plt.close()
 
+    # Line chart for total fleets of each type each month
+    start_month = (month - months_to_display + 1) % 12 or 12
+    start_year = year if month >= months_to_display else year - 1
+    date_range = [
+        (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
+        for i in range(months_to_display)
+    ]
+
+    monthly_totals = (
+        MonthlyCreatorStats.objects.filter(
+            year__in=[start_year, year],
+            month__in=[date[1] for date in date_range],
+        )
+        .values("month", "fleet_type__name")
+        .annotate(total_fleets=Sum("total_created"))
+        .order_by("month", "fleet_type__name")
+    )
+
+    fleet_type_names = {item["fleet_type__name"] for item in monthly_totals}
+    line_data = {name: [0] * months_to_display for name in fleet_type_names}
+    for item in monthly_totals:
+        fleet_name = item["fleet_type__name"]
+        month_index = next(
+            (i for i, date in enumerate(date_range) if date[1] == item["month"]), None
+        )
+        if month_index is not None:
+            line_data[fleet_name][month_index] = item["total_fleets"]
+
+    if line_data:
+        plt.figure(figsize=(12, 8))
+        colors = plt.cm.viridis(np.linspace(0, 1, len(line_data)))  # Use colormap
+
+        for (fleet_name, totals), color in zip(line_data.items(), colors):
+            plt.plot(
+                range(1, months_to_display + 1),
+                totals,
+                marker="o",
+                label=fleet_name,
+                color=color,
+            )
+
+        plt.gcf().set_facecolor(CHART_BACKGROUND_COLOR)
+        ax = plt.gca()
+        ax.set_facecolor(CHART_BACKGROUND_COLOR)  # Set plot area background color
+        plt.title(
+            "Month Over Month Fleet Types",
+            color="white",
+            fontsize=16,
+            fontweight="bold",
+        )
+        plt.ylabel("Total Fleets", color="white")
+        plt.xticks(
+            ticks=range(1, months_to_display + 1),
+            labels=[f"{calendar.month_abbr[date[1]]} {date[0]}" for date in date_range],
+            color="white",
+            rotation=45,  # Set rotation for the labels
+            ha="right",  # Align labels to the right
+        )
+        plt.yticks(color="white")
+        plt.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
+        plt.legend(
+            loc="upper left",
+            facecolor="#2c2f33",
+            edgecolor="white",
+            labelcolor="lightgray",
+        )
+        plt.tight_layout()
+
+        buf = BytesIO()
+        plt.savefig(buf, format="png")
+        buf.seek(0)
+        line_chart_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        buf.close()
+        plt.clf()
+        plt.close()
+
     return {
         "bar_chart": image_base64,
         "pie_chart": pie_image_base64,
+        "line_chart": line_chart_base64,
     }
 
 
@@ -403,8 +479,8 @@ def alliance_charts(month, year):
 
     # AFAT chart
     fig, ax = plt.subplots(figsize=(12.8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
     bottom_afat = np.zeros(len(corp_names))
     color_range_afat = plt.cm.viridis(np.linspace(0, 1, len(df_afat.columns)))
 
@@ -453,10 +529,10 @@ def alliance_charts(month, year):
 
     # IMP chart
     fig, ax = plt.subplots(figsize=(12.8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
     bottom_imp = np.zeros(len(corp_names))
-    color_range_imp = plt.cm.autumn(np.linspace(0, 1, len(df_imp.columns)))
+    color_range_imp = plt.cm.winter(np.linspace(0, 1, len(df_imp.columns)))
 
     for idx, column in enumerate(df_imp.columns):
         ax.bar(
@@ -506,11 +582,11 @@ def alliance_charts(month, year):
     total_imp = df_imp.sum(axis=1)
 
     fig, ax = plt.subplots(figsize=(12.8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
 
-    ax.bar(x - 0.2, total_afat, width=0.4, label="LAWN", color="blue")
-    ax.bar(x + 0.2, total_imp, width=0.4, label="IMP", color="red")
+    ax.bar(x - 0.2, total_afat, width=0.4, label="LAWN", color="cyan")
+    ax.bar(x + 0.2, total_imp, width=0.4, label="IMP", color="blue")
 
     for i in range(len(corp_names)):
         ax.text(
@@ -555,8 +631,8 @@ def alliance_charts(month, year):
     # Pie chart for AFAT fleet type proportions
     afat_totals = df_afat.sum(axis=0)
     fig, ax = plt.subplots(figsize=(8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
     wedges, texts, autotexts = ax.pie(
         afat_totals,
         autopct=lambda p: f"{p:.1f}%" if p > 1 else "",
@@ -605,8 +681,8 @@ def alliance_charts(month, year):
     )
 
     # Prepare the data for the past 10 months
-    months_to_display = 5  # Adjust this number to change the range
-    start_month = (month - months_to_display) % 12 or 12
+
+    start_month = (month - months_to_display + 1) % 12 or 12
     start_year = year if month > months_to_display else year - 1
     date_range = [
         (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
@@ -626,21 +702,23 @@ def alliance_charts(month, year):
     running_avg = pd.Series(totals).rolling(window=3, min_periods=1).mean()
 
     fig, ax = plt.subplots(figsize=(12.8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
     ax.plot(dates, totals, marker="o", color="cyan", label="Total Fats")
     ax.plot(dates, running_avg, linestyle="--", color="orange", label="Running Average")
     # Annotate the total for each month
+
     for i, total in enumerate(totals):
-        ax.text(
-            dates[i],
-            total + 5,
-            f"{total}",
-            ha="center",
-            va="bottom",
-            color="white",
-            fontsize=10,
-        )
+        if total > 0:
+            ax.text(
+                dates[i],
+                total + 5,
+                f"{total}",
+                ha="center",
+                va="bottom",
+                color="white",
+                fontsize=10,
+            )
 
     ax.set_title(
         "Month Over Month Lawn Fats", color="white", fontsize=16, fontweight="bold"
@@ -664,35 +742,37 @@ def alliance_charts(month, year):
 
     # Relative participation chart
     fig, ax = plt.subplots(figsize=(12.8, 8))
-    fig.patch.set_facecolor("#303030")
-    ax.set_facecolor("#303030")
+    fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+    ax.set_facecolor(CHART_BACKGROUND_COLOR)
 
     bar_afat = ax.bar(
-        x - 0.2, df_relative["AFAT"], width=0.4, label="LAWN", color="blue"
+        x - 0.2, df_relative["AFAT"], width=0.4, label="LAWN", color="cyan"
     )
-    bar_imp = ax.bar(x + 0.2, df_relative["IMP"], width=0.4, label="IMP", color="red")
+    bar_imp = ax.bar(x + 0.2, df_relative["IMP"], width=0.4, label="IMP", color="blue")
 
     for bar in bar_afat:
         yval = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            yval,
-            f"{yval:.1f}",
-            ha="center",
-            va="bottom",
-            color="white",
-        )
+        if yval > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                yval,
+                f"{yval:.1f}",
+                ha="center",
+                va="bottom",
+                color="white",
+            )
 
     for bar in bar_imp:
         yval = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            yval,
-            f"{yval:.1f}",
-            ha="center",
-            va="bottom",
-            color="white",
-        )
+        if yval > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                yval,
+                f"{yval:.1f}",
+                ha="center",
+                va="bottom",
+                color="white",
+            )
 
     ax.set_title(
         f"Relative Participation for {calendar.month_name[month]} {year}",
@@ -728,8 +808,10 @@ def alliance_charts(month, year):
 
 def corp_charts(month, year):
     ally = EveonlineEveallianceinfo.objects.get(alliance_id=settings.STATS_ALLIANCE_ID)
-    all_corps = EveonlineEvecorporationinfo.objects.filter(alliance=ally).exclude(
-        corporation_id__in=settings.STATS_IGNORE_CORPS
+    all_corps = (
+        EveonlineEvecorporationinfo.objects.filter(alliance=ally)
+        .exclude(corporation_id__in=settings.STATS_IGNORE_CORPS)
+        .order_by("corporation_name")
     )
 
     charts_data = {}
@@ -737,7 +819,7 @@ def corp_charts(month, year):
     for corp in all_corps:
         corp_members = AuthenticationUserprofile.objects.filter(
             main_character__corporation_id=corp.corporation_id
-        )
+        ).order_by("main_character__character_name")
 
         users = [member.main_character.character_name for member in corp_members]
         user_ids = [member.user_id for member in corp_members]
@@ -746,28 +828,109 @@ def corp_charts(month, year):
             user_id__in=user_ids, month=month, year=year
         ).select_related("fleet_type")
 
-        data = {
-            fleet_type.name: [0] * len(users)
-            for fleet_type in MonthlyFleetType.objects.all()
+        data_afat = {
+            user: {ft.name: 0 for ft in MonthlyFleetType.objects.filter(source="afat")}
+            for user in users
+        }
+        data_imp = {
+            user: {
+                f"IMP {ft.name}": 0
+                for ft in MonthlyFleetType.objects.filter(source="imp")
+            }
+            for user in users
         }
 
         for stat in stats:
             character_name = stat.get_user().profile.main_character.character_name
-            data[stat.fleet_type.name][users.index(character_name)] += stat.total_fats
+            if stat.fleet_type.source == "afat":
+                data_afat[character_name][stat.fleet_type.name] += stat.total_fats
+            elif stat.fleet_type.source == "imp":
+                data_imp[character_name][
+                    f"IMP {stat.fleet_type.name}"
+                ] += stat.total_fats
 
-        df = pd.DataFrame(data, index=users)
-        df = df.sort_index()
+        df_afat = pd.DataFrame(data_afat).T
+        df_imp = pd.DataFrame(data_imp).T
 
-        if not df.empty:
-            colormap = plt.cm.viridis
-            color_range = colormap(np.linspace(0, 1, len(df.columns)))
+        df_afat = df_afat.loc[:, (df_afat != 0).any(axis=0)]
+        df_imp = df_imp.loc[:, (df_imp != 0).any(axis=0)]
 
-            plt.figure(figsize=(12, 8))
-            df.plot(kind="bar", stacked=True, figsize=(12, 8), color=color_range)
-            plt.title(f"{corp.corporation_name} Player Breakdown of Fat Types")
-            plt.ylabel("Total Fats")
-            plt.xlabel("Users")
-            plt.xticks(rotation=45, ha="right")
+        if not df_afat.empty or not df_imp.empty:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+            ax.set_facecolor(CHART_BACKGROUND_COLOR)
+
+            bar_width = 0.35
+            indices = np.arange(len(users))
+
+            bottom_afat = np.zeros(len(users))
+            bottom_imp = np.zeros(len(users))
+            colors_afat = plt.cm.viridis(np.linspace(0, 1, len(df_afat.columns)))
+            colors_imp = plt.cm.cool(np.linspace(0, 1, len(df_imp.columns)))
+
+            for idx, column in enumerate(df_afat.columns):
+                ax.bar(
+                    indices - bar_width / 2,
+                    df_afat[column].values,
+                    bar_width,
+                    bottom=bottom_afat,
+                    color=colors_afat[idx],
+                    label=column,
+                )
+                bottom_afat += df_afat[column].values
+
+            for idx, column in enumerate(df_imp.columns):
+                ax.bar(
+                    indices + bar_width / 2,
+                    df_imp[column].values,
+                    bar_width,
+                    bottom=bottom_imp,
+                    color=colors_imp[idx],
+                    label=column,
+                )
+                bottom_imp += df_imp[column].values
+
+            ylim_bottom, ylim_top = ax.get_ylim()
+            if ylim_top < 5:
+                ax.set_ylim(0, 5)
+            else:
+                max_y = max(bottom_afat.max(), bottom_imp.max())
+                ax.set_ylim(0, max_y * 1.1)
+
+            for i, total in enumerate(bottom_afat):
+                if total > 0:
+                    ax.text(
+                        i - bar_width / 2,
+                        total,
+                        f"{int(total)}",
+                        ha="center",
+                        va="bottom",
+                        color="white",
+                    )
+
+            for i, total in enumerate(bottom_imp):
+                if total > 0:
+                    ax.text(
+                        i + bar_width / 2,
+                        total,
+                        f"{int(total)}",
+                        ha="center",
+                        va="bottom",
+                        color="white",
+                    )
+
+            ax.set_title(
+                f"{corp.corporation_name} Fleet Breakdown for {calendar.month_name[month]} {year}",
+                color="white",
+                fontsize=16,
+                fontweight="bold",
+            )
+            ax.set_ylabel("Total Fats", color="white")
+            ax.set_xticks(indices)
+            ax.set_xticklabels(users, rotation=45, ha="right", color="white")
+            ax.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
+            ax.tick_params(axis="y", colors="lightgray")
+            ax.legend(facecolor="#2c2f33", edgecolor="white", labelcolor="lightgray")
             plt.tight_layout()
 
             buf = BytesIO()
@@ -779,5 +942,159 @@ def corp_charts(month, year):
             buf.close()
             plt.clf()
             plt.close()
+        else:
+            # Placeholder chart for corporations with no fats
+            fig, ax = plt.subplots(figsize=(12, 8))
+            fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+            ax.set_facecolor(CHART_BACKGROUND_COLOR)
+
+            ax.text(
+                0.5,
+                0.5,
+                "No Fats Data Available",
+                ha="center",
+                va="center",
+                color="white",
+                fontsize=16,
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(
+                f"{corp.corporation_name} Fleet Breakdown for {calendar.month_name[month]} {year}",
+                color="white",
+            )
+            plt.tight_layout()
+
+            buf = BytesIO()
+            plt.savefig(buf, format="png")
+            buf.seek(0)
+            charts_data[corp.corporation_name] = base64.b64encode(buf.read()).decode(
+                "utf-8"
+            )
+            buf.close()
+            plt.clf()
+            plt.close()
+
+        # Line chart for month over month AFAT and IMP data for each corp
+        afat_stats = (
+            MonthlyCorpStats.objects.filter(
+                corporation_id=corp.corporation_id,
+                fleet_type__source="afat",
+            )
+            .values("year", "month")
+            .annotate(total=Sum("total_fats"))
+            .order_by("year", "month")
+        )
+
+        imp_stats = (
+            MonthlyCorpStats.objects.filter(
+                corporation_id=corp.corporation_id,
+                fleet_type__source="imp",
+            )
+            .values("year", "month")
+            .annotate(total=Sum("total_fats"))
+            .order_by("year", "month")
+        )
+
+        months_to_display = (
+            6  # Adjust this number as needed to include the current month
+        )
+        start_month = (month - months_to_display + 1) % 12 or 12
+        start_year = year if month >= months_to_display else year - 1
+        date_range = [
+            (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
+            for i in range(months_to_display)
+        ]
+        date_totals_afat = {date: 0 for date in date_range}
+        date_totals_imp = {date: 0 for date in date_range}
+        for item in afat_stats:
+            date_totals_afat[(item["year"], item["month"])] = item["total"]
+        for item in imp_stats:
+            date_totals_imp[(item["year"], item["month"])] = item["total"]
+
+        # Ensure both lists are the same length by aligning data
+        dates = [datetime(year=year, month=month, day=1) for year, month in date_range]
+        totals_afat = [
+            date_totals_afat.get((date.year, date.month), 0) for date in dates
+        ]
+        totals_imp = [date_totals_imp.get((date.year, date.month), 0) for date in dates]
+
+        running_avg_afat = (
+            pd.Series(totals_afat).rolling(window=3, min_periods=1).mean()
+        )
+        running_avg_imp = pd.Series(totals_imp).rolling(window=3, min_periods=1).mean()
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        fig.patch.set_facecolor(CHART_BACKGROUND_COLOR)
+        ax.set_facecolor(CHART_BACKGROUND_COLOR)
+        ax.plot(dates, totals_afat, marker="o", color="cyan", label="Total Fats")
+        ax.plot(
+            dates,
+            running_avg_afat,
+            linestyle="--",
+            color="orange",
+            label="Running Avg",
+        )
+        ax.plot(dates, totals_imp, marker="o", color="blue", label="IMP Total Fats")
+        ax.plot(
+            dates,
+            running_avg_imp,
+            linestyle="--",
+            color="purple",
+            label="IMP Running Avg",
+        )
+
+        for i, total in enumerate(totals_afat):
+            if total > 0:
+                ax.text(
+                    dates[i],
+                    total,
+                    f"{total}",
+                    ha="center",
+                    va="bottom",
+                    color="white",
+                    fontsize=10,
+                )
+
+        for i, total in enumerate(totals_imp):
+            if total > 0:
+                ax.text(
+                    dates[i],
+                    total,
+                    f"{total}",
+                    ha="center",
+                    va="bottom",
+                    color="white",
+                    fontsize=10,
+                )
+
+        ax.set_ylim(0)  # Ensure y-axis starts at zero
+        ax.yaxis.get_major_locator().set_params(
+            integer=True
+        )  # Display only integer ticks
+        ax.set_title(
+            f"{corp.corporation_name} Month Over Month",
+            color="white",
+            fontsize=16,
+            fontweight="bold",
+        )
+        ax.set_ylabel("Total Fats", color="lightgray")
+        ax.tick_params(axis="y", colors="lightgray")
+        ax.tick_params(axis="x", colors="lightgray", rotation=45)
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+        ax.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
+        ax.legend(facecolor="#2c2f33", edgecolor="white", labelcolor="lightgray")
+        plt.tight_layout()
+
+        buf = BytesIO()
+        plt.savefig(buf, format="png")
+        buf.seek(0)
+        charts_data[f"{corp.corporation_name}_line"] = base64.b64encode(
+            buf.read()
+        ).decode("utf-8")
+        buf.close()
+        plt.clf()
+        plt.close()
 
     return charts_data

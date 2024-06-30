@@ -14,4 +14,11 @@
         <p>No data available for the selected month and year.</p>
         {% endif %}
     </div>
+    <div class="chart mt-5">
+        {% if creator_charts_data.line_chart %}
+        <img src="data:image/png;base64,{{ creator_charts_data.line_chart }}" alt="Fleet Types over time" class="img-fluid">
+        {% else %}
+        <p>No data available for the selected month and year.</p>
+        {% endif %}
+    </div>
 </div>
