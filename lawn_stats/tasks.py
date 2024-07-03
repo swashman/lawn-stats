@@ -73,6 +73,7 @@ def process_csv_task(csv_data, column_mapping, month, year):
                 user = AuthUser.objects.get(id=unknown_account.user_id)
                 corporation = user.profile.main_character.corporation
             else:
+                logger.warning(f"Unknown account {account_name} not found.")
                 continue
 
         for column, fleet_type_name in column_mapping.items():
@@ -160,22 +161,52 @@ def process_afat_data_task(month, year):
     for afat_fat in afat_fats:
         try:
             character = afat_fat.character
+            logger.debug(
+                f"Processing character: {character.character_name} (ID: {character.character_id})"
+            )
+
             ownership = AuthenticationCharacterownership.objects.get(
                 character=character
             )
             user = ownership.user
             main_character = user.profile.main_character
+
             if not main_character or not main_character.alliance:
+                logger.debug(
+                    f"Skipping character: {character.character_name} - No main character or alliance."
+                )
                 continue
+
             if main_character.alliance.alliance_id != settings.STATS_ALLIANCE_ID:
+                logger.debug(
+                    f"Skipping character: {character.character_name} - Not in the specified alliance."
+                )
                 continue
-            corporation = character.corporation
-        except (
-            EveonlineEvecharacter.DoesNotExist,
-            AuthenticationCharacterownership.DoesNotExist,
-            EveonlineEvecorporationinfo.DoesNotExist,
-            AuthenticationUserprofile.DoesNotExist,
-        ):
+
+            corporation = main_character.corporation
+            logger.debug(
+                f"Character {character.character_name} belongs to corporation: {corporation.corporation_name}"
+            )
+
+        except EveonlineEvecharacter.DoesNotExist:
+            logger.error(
+                f"EveonlineEvecharacter.DoesNotExist: Character {character.character_name} not found."
+            )
+            continue
+        except AuthenticationCharacterownership.DoesNotExist:
+            logger.error(
+                f"AuthenticationCharacterownership.DoesNotExist: Ownership not found for character {character.character_name}."
+            )
+            continue
+        except EveonlineEvecorporationinfo.DoesNotExist:
+            logger.error(
+                f"EveonlineEvecorporationinfo.DoesNotExist: Corporation not found for main character {main_character.character_name}."
+            )
+            continue
+        except AuthenticationUserprofile.DoesNotExist:
+            logger.error(
+                f"AuthenticationUserprofile.DoesNotExist: User profile not found for user {user.username}."
+            )
             continue
 
         fatlink = afat_fat.fatlink

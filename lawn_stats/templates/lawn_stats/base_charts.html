@@ -26,13 +26,16 @@
     </div>
     <ul class="nav nav-tabs w-100" id="chartTabs" role="tablist">
         <li class="nav-item">
-            <a class="nav-link active" id="creator-charts-tab" data-bs-toggle="tab" href="#creator-charts" role="tab" aria-controls="creator-charts" aria-selected="true">Creator Charts</a>
+            <a class="nav-link active" id="creator-charts-tab" data-bs-toggle="tab" href="#creator-charts" role="tab" aria-controls="creator-charts" aria-selected="true">FC Charts</a>
         </li>
         <li class="nav-item">
             <a class="nav-link" id="alliance-charts-tab" data-bs-toggle="tab" href="#alliance-charts" role="tab" aria-controls="alliance-charts" aria-selected="false">Alliance Charts</a>
         </li>
         <li class="nav-item">
             <a class="nav-link" id="corp-charts-tab" data-bs-toggle="tab" href="#corp-charts" role="tab" aria-controls="corp-charts" aria-selected="false">Corp Charts</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="raw-data-tab" data-bs-toggle="tab" href="#raw-data" role="tab" aria-controls="raw-data" aria-selected="false">Raw Data</a>
         </li>
     </ul>
     <div class="tab-content w-100" id="chartTabsContent">
@@ -44,6 +47,9 @@
         </div>
         <div class="tab-pane fade" id="corp-charts" role="tabpanel" aria-labelledby="corp-charts-tab">
             {% include 'lawn_stats/charts/corp_charts.html' %}
+        </div>
+        <div class="tab-pane fade" id="raw-data" role="tabpanel" aria-labelledby="raw-data-tab">
+            {% include 'lawn_stats/charts/raw_data.html' %}
         </div>
     </div>
 </div>

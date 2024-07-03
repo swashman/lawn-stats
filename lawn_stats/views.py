@@ -1,11 +1,13 @@
 import base64
 import calendar
 import csv
-from datetime import datetime  # Correct import
+from collections import defaultdict
+from datetime import datetime, timedelta  # Correct import
 from io import BytesIO
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
 
@@ -17,8 +19,6 @@ from django.shortcuts import redirect, render
 from allianceauth.services.hooks import get_extension_logger
 
 from .forms import ColumnMappingForm, CSVUploadForm, MonthYearForm
-
-# from .models import CorputilsCorpstats as CorpStats
 from .models import (
     AuthenticationUserprofile,
     CSVColumnMapping,
@@ -35,7 +35,7 @@ from .tasks import process_afat_data_task, process_csv_task
 logger = get_extension_logger(__name__)
 
 CHART_BACKGROUND_COLOR = "#575555"
-months_to_display = 6
+months_to_display = 5
 
 
 def upload_afat_data(request):
@@ -144,11 +144,20 @@ def map_columns(request):
     return redirect("upload_csv")
 
 
+def get_default_month_and_year():
+    current_date = datetime.now()
+    first_of_this_month = current_date.replace(day=1)
+    last_month_date = first_of_this_month - timedelta(days=1)
+    return last_month_date.month, last_month_date.year
+
+
 def all_charts(request):
     # Get month and year from request GET parameters, default to current month and year if not provided
     current_date = datetime.now()
-    month = request.GET.get("month", current_date.month)
-    year = request.GET.get("year", current_date.year)
+    default_month, default_year = get_default_month_and_year()
+
+    month = int(request.GET.get("month", default_month))
+    year = int(request.GET.get("year", default_year))
 
     # Convert month and year to integers
     month = int(month)
@@ -172,7 +181,7 @@ def all_charts(request):
         year = current_date.year
 
     # Determine if forward navigation buttons should be shown
-    show_forward = month < current_date.month or year < current_date.year
+    show_forward = month < (current_date.month - 1) or year < current_date.year
 
     # List of month names for display
     month_names = [
@@ -192,10 +201,16 @@ def all_charts(request):
 
     # Fetch creator charts data
     creator_charts_data = creator_charts(month, year)
+    logger.info("FC Chart completed")
     # fetch alliance charts data
     alliance_charts_data = alliance_charts(month, year)
+    logger.info("Alliance Chart completed")
     # fetch corp charts data
     corp_charts_data = corp_charts(month, year)
+    logger.info("Corp Chart completed")
+    # fetch raw data
+    raw_data = raw_data_view(month, year)
+    logger.info("Raw Data completed")
 
     # Prepare context
     context = {
@@ -206,6 +221,7 @@ def all_charts(request):
         "creator_charts_data": creator_charts_data,
         "alliance_charts": alliance_charts_data,
         "corp_charts": corp_charts_data,
+        "raw_data": raw_data,
         "show_forward": show_forward,
     }
 
@@ -215,7 +231,7 @@ def all_charts(request):
 def creator_charts(month, year):
     # Query data from MonthlyCreatorStats
     stats = MonthlyCreatorStats.objects.filter(month=month, year=year)
-    fleet_types = MonthlyFleetType.objects.filter(source="afat")
+    fleet_types = MonthlyFleetType.objects.filter(source="afat", month=month, year=year)
 
     month_name = datetime(year, month, 1).strftime("%B")
 
@@ -268,6 +284,7 @@ def creator_charts(month, year):
                 labelcolor="lightgray",
             )
             plt.grid(axis="y", linestyle="--", linewidth=0.5, color="grey", alpha=0.7)
+            ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True, prune="both"))
             plt.tight_layout()
 
             buf = BytesIO()
@@ -329,11 +346,11 @@ def creator_charts(month, year):
             plt.close()
 
     # Line chart for total fleets of each type each month
-    start_month = (month - months_to_display + 1) % 12 or 12
+    start_month = (month - months_to_display) % 12 or 12
     start_year = year if month >= months_to_display else year - 1
     date_range = [
         (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
-        for i in range(months_to_display)
+        for i in range(months_to_display + 1)
     ]
 
     monthly_totals = (
@@ -341,20 +358,25 @@ def creator_charts(month, year):
             year__in=[start_year, year],
             month__in=[date[1] for date in date_range],
         )
-        .values("month", "fleet_type__name")
+        .values("month", "year", "fleet_type__name")
         .annotate(total_fleets=Sum("total_created"))
-        .order_by("month", "fleet_type__name")
+        .order_by("year", "month", "fleet_type__name")
     )
 
     fleet_type_names = {item["fleet_type__name"] for item in monthly_totals}
-    line_data = {name: [0] * months_to_display for name in fleet_type_names}
+    line_data = {name: [0] * len(date_range) for name in fleet_type_names}
     for item in monthly_totals:
         fleet_name = item["fleet_type__name"]
-        month_index = next(
-            (i for i, date in enumerate(date_range) if date[1] == item["month"]), None
+        date_index = next(
+            (
+                i
+                for i, date in enumerate(date_range)
+                if date[1] == item["month"] and date[0] == item["year"]
+            ),
+            None,
         )
-        if month_index is not None:
-            line_data[fleet_name][month_index] = item["total_fleets"]
+        if date_index is not None:
+            line_data[fleet_name][date_index] = item["total_fleets"]
 
     if line_data:
         plt.figure(figsize=(12, 8))
@@ -362,7 +384,7 @@ def creator_charts(month, year):
 
         for (fleet_name, totals), color in zip(line_data.items(), colors):
             plt.plot(
-                range(1, months_to_display + 1),
+                range(1, len(date_range) + 1),
                 totals,
                 marker="o",
                 label=fleet_name,
@@ -373,14 +395,14 @@ def creator_charts(month, year):
         ax = plt.gca()
         ax.set_facecolor(CHART_BACKGROUND_COLOR)  # Set plot area background color
         plt.title(
-            "Month Over Month Fleet Types",
+            f"Month Over Month Fleet Types for {year}",
             color="white",
             fontsize=16,
             fontweight="bold",
         )
         plt.ylabel("Total Fleets", color="white")
         plt.xticks(
-            ticks=range(1, months_to_display + 1),
+            ticks=range(1, len(date_range) + 1),
             labels=[f"{calendar.month_abbr[date[1]]} {date[0]}" for date in date_range],
             color="white",
             rotation=45,  # Set rotation for the labels
@@ -455,7 +477,10 @@ def alliance_charts(month, year):
     for stat in stats:
         corp_ticker = stat.get_corporation().corporation_ticker
         # total_mains = CorpStats.objects.get(corp=stat.get_corporation().pk).main_count
-        total_mains = 10
+        corp_members = AuthenticationUserprofile.objects.filter(
+            main_character__corporation_id=stat.get_corporation().corporation_id
+        ).order_by("main_character__character_name")
+        total_mains = corp_members.count()
         if stat.fleet_type.source == "afat":
             data_afat[corp_ticker][stat.fleet_type.name] += stat.total_fats
             if total_mains > 0:
@@ -680,13 +705,11 @@ def alliance_charts(month, year):
         .order_by("year", "month")
     )
 
-    # Prepare the data for the past 10 months
-
-    start_month = (month - months_to_display + 1) % 12 or 12
+    start_month = (month - months_to_display) % 12 or 12
     start_year = year if month > months_to_display else year - 1
     date_range = [
         (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
-        for i in range(months_to_display)
+        for i in range(months_to_display + 1)  # Include current month
     ]
 
     date_totals = {date: 0 for date in date_range}
@@ -775,7 +798,7 @@ def alliance_charts(month, year):
             )
 
     ax.set_title(
-        f"Relative Participation for {calendar.month_name[month]} {year}",
+        f"Relative Participation(Fleets/Main) for {calendar.month_name[month]} {year}",
         color="white",
         fontsize=16,
         fontweight="bold",
@@ -829,13 +852,20 @@ def corp_charts(month, year):
         ).select_related("fleet_type")
 
         data_afat = {
-            user: {ft.name: 0 for ft in MonthlyFleetType.objects.filter(source="afat")}
+            user: {
+                ft.name: 0
+                for ft in MonthlyFleetType.objects.filter(
+                    source="afat", month=month, year=year
+                )
+            }
             for user in users
         }
         data_imp = {
             user: {
                 f"IMP {ft.name}": 0
-                for ft in MonthlyFleetType.objects.filter(source="imp")
+                for ft in MonthlyFleetType.objects.filter(
+                    source="imp", month=month, year=year
+                )
             }
             for user in users
         }
@@ -996,14 +1026,11 @@ def corp_charts(month, year):
             .order_by("year", "month")
         )
 
-        months_to_display = (
-            6  # Adjust this number as needed to include the current month
-        )
-        start_month = (month - months_to_display + 1) % 12 or 12
+        start_month = (month - months_to_display) % 12 or 12
         start_year = year if month >= months_to_display else year - 1
         date_range = [
             (start_year + (start_month + i - 1) // 12, (start_month + i - 1) % 12 + 1)
-            for i in range(months_to_display)
+            for i in range(months_to_display + 1)
         ]
         date_totals_afat = {date: 0 for date in date_range}
         date_totals_imp = {date: 0 for date in date_range}
@@ -1098,3 +1125,64 @@ def corp_charts(month, year):
         plt.close()
 
     return charts_data
+
+
+def raw_data_view(month, year):
+    raw_data = {}
+
+    try:
+        ally = EveonlineEveallianceinfo.objects.get(
+            alliance_id=settings.STATS_ALLIANCE_ID
+        )
+    except EveonlineEveallianceinfo.DoesNotExist:
+        return raw_data
+
+    all_corps = (
+        EveonlineEvecorporationinfo.objects.filter(alliance=ally)
+        .exclude(corporation_id__in=settings.STATS_IGNORE_CORPS)
+        .order_by("corporation_name")
+    )
+
+    for corp in all_corps:
+        corp_members = AuthenticationUserprofile.objects.filter(
+            main_character__corporation_id=corp.corporation_id
+        ).order_by("main_character__character_name")
+
+        main_to_data = defaultdict(lambda: {"afat_total": 0, "imp_total": 0})
+
+        for member in corp_members:
+            user_id = member.user_id
+            main_character = member.main_character.character_name
+
+            afat_total = (
+                MonthlyUserStats.objects.filter(
+                    user_id=user_id, fleet_type__source="afat", month=month, year=year
+                ).aggregate(total=Sum("total_fats"))["total"]
+                or 0
+            )
+
+            imp_total = (
+                MonthlyUserStats.objects.filter(
+                    user_id=user_id, fleet_type__source="imp", month=month, year=year
+                ).aggregate(total=Sum("total_fats"))["total"]
+                or 0
+            )
+
+            main_to_data[main_character]["afat_total"] += afat_total
+            main_to_data[main_character]["imp_total"] += imp_total
+
+        corp_data = sorted(
+            [
+                {
+                    "name": main,
+                    "afat_total": data["afat_total"],
+                    "imp_total": data["imp_total"],
+                }
+                for main, data in main_to_data.items()
+            ],
+            key=lambda x: x["name"],
+        )
+
+        raw_data[corp.corporation_name] = corp_data
+
+    return raw_data
