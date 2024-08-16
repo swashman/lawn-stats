@@ -12,7 +12,7 @@ keywords = [
     "allianceauth",
 ]
 license = { file = "LICENSE" }
-authors = [{ name = "Swashman(John Nelson)", email = "jnelson2288@gmail.com" }]
+authors = [ { name = "Swashman(John Nelson)", email = "jnelson2288@gmail.com" } ]
 requires-python = ">=3.8"
 classifiers = [
     "Environment :: Web Environment",
@@ -35,18 +35,17 @@ dynamic = [
     "version",
 ]
 dependencies = [
-    "allianceauth<5.0.0,>=4",
+    "allianceauth<5,>=4",
     "matplotlib",
     "numpy",
     "pandas",
 ]
-[project.urls]
-Documentation = "https://github.com/swashman/lawn-stats#readme"
-Homepage = "https://github.com/swashman/lawn-stats"
-Issues = "https://github.com/swashman/lawn-stats/issues"
+urls.Documentation = "https://github.com/swashman/lawn-stats#readme"
+urls.Homepage = "https://github.com/swashman/lawn-stats"
+urls.Issues = "https://github.com/swashman/lawn-stats/issues"
 
 [tool.hatch.version]
 path = "lawn_stats/__init__.py"
 
 [tool.hatch.build]
-include = ["/lawn_stats"]
+include = [ "/lawn_stats" ]

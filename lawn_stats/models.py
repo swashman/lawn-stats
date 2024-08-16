@@ -3,8 +3,6 @@ App Models
 Create your models in here
 """
 
-from typing import Union
-
 from django.core.exceptions import ObjectDoesNotExist
 
 # Django
@@ -324,7 +322,7 @@ class EveonlineEvecharacter(models.Model):
         app_label = "secondary_app"
 
     @property
-    def alliance(self) -> Union[EveonlineEveallianceinfo, None]:
+    def alliance(self) -> EveonlineEveallianceinfo | None:
         """
         Pseudo foreign key from alliance_id to EveAllianceInfo
         :raises: EveAllianceInfo.DoesNotExist
