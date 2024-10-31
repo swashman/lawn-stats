@@ -41,4 +41,46 @@
         <p>No data available for the selected month and year.</p>
         {% endif %}
     </div>
+
+    <!-- Top 5 AFAT Users Table -->
+    <div class="table-responsive mt-5">
+        <h3>Top 5 FATs</h3>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Fleet Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in top_afat_users %}
+                <tr>
+                    <td>{{ user.name }}</td>
+                    <td>{{ user.afat_total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Top 5 Combined AFAT/IMP Users Table -->
+    <div class="table-responsive mt-5">
+        <h3>Top 5 FATs & IMP Fleets</h3>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Combined Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in top_combined_users %}
+                <tr>
+                    <td>{{ user.name }}</td>
+                    <td>{{ user.combined_total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>

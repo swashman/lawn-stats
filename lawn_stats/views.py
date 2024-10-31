@@ -209,7 +209,7 @@ def all_charts(request):
     corp_charts_data = corp_charts(month, year)
     logger.info("Corp Chart completed")
     # fetch raw data
-    raw_data = raw_data_view(month, year)
+    raw_data_result = raw_data_view(month, year)
     logger.info("Raw Data completed")
 
     # Prepare context
@@ -221,7 +221,9 @@ def all_charts(request):
         "creator_charts_data": creator_charts_data,
         "alliance_charts": alliance_charts_data,
         "corp_charts": corp_charts_data,
-        "raw_data": raw_data,
+        "raw_data": raw_data_result.get("raw_data"),
+        "top_afat_users": raw_data_result.get("top_afat_users"),
+        "top_combined_users": raw_data_result.get("top_combined_users"),
         "show_forward": show_forward,
     }
 
@@ -235,14 +237,29 @@ def creator_charts(month, year):
 
     month_name = datetime(year, month, 1).strftime("%B")
 
-    # Prepare data for the stacked bar chart
-    creators = list(
-        {stat.get_creator().profile.main_character.character_name for stat in stats}
-    )
+    creators = set()
+    for stat in stats:
+        # Log the ID of the stat
+        logger.info(f"Logging stat ID: {stat.creator_id}")
+
+        # Check if main_character exists; otherwise, use username
+        creator_name = (
+            stat.get_creator().profile.main_character.character_name
+            if stat.get_creator().profile.main_character
+            else stat.get_creator().username
+        )
+        creators.add(creator_name)
+
+    creators = list(creators)
     data = {fleet_type.name: [0] * len(creators) for fleet_type in fleet_types}
     for stat in stats:
         if stat.fleet_type.source == "afat":
-            creator_name = stat.get_creator().profile.main_character.character_name
+            # Check if main_character exists; otherwise, use username
+            creator_name = (
+                stat.get_creator().profile.main_character.character_name
+                if stat.get_creator().profile.main_character
+                else stat.get_creator().username
+            )
             data[stat.fleet_type.name][
                 creators.index(creator_name)
             ] += stat.total_created
@@ -453,15 +470,15 @@ def alliance_charts(month, year):
         corporation_id__in=all_corps.values_list("corporation_id", flat=True),
     ).select_related("fleet_type")
 
-    data_afat = {
-        corp: {
+    data_afat = {}
+    for corp in corp_names:
+        logger.info("Corp: %s", corp)
+        data_afat[corp] = {
             ft.name: 0
             for ft in MonthlyFleetType.objects.filter(
                 month=month, year=year, source="afat"
             )
         }
-        for corp in corp_names
-    }
     data_imp = {
         corp: {
             ft.name: 0
@@ -476,19 +493,37 @@ def alliance_charts(month, year):
 
     for stat in stats:
         corp_ticker = stat.get_corporation().corporation_ticker
+        logger.info(
+            "Processing: corp- %s source- %s total- %s",
+            corp_ticker,
+            stat.fleet_type.source,
+            stat.total_fats,
+        )
         # total_mains = CorpStats.objects.get(corp=stat.get_corporation().pk).main_count
         corp_members = AuthenticationUserprofile.objects.filter(
             main_character__corporation_id=stat.get_corporation().corporation_id
         ).order_by("main_character__character_name")
         total_mains = corp_members.count()
+
         if stat.fleet_type.source == "afat":
-            data_afat[corp_ticker][stat.fleet_type.name] += stat.total_fats
-            if total_mains > 0:
-                relative_data[corp_ticker]["AFAT"] += stat.total_fats / total_mains
+            if corp_ticker in data_afat:  # Check if corp_ticker is in data_afat
+                data_afat[corp_ticker][stat.fleet_type.name] += stat.total_fats
+                if total_mains > 0:
+                    relative_data[corp_ticker]["AFAT"] += stat.total_fats / total_mains
+            else:
+                logger.warning(
+                    f"Ticker {corp_ticker} not found in data_afat, skipping stat."
+                )
+
         elif stat.fleet_type.source == "imp":
-            data_imp[corp_ticker][stat.fleet_type.name] += stat.total_fats
-            if total_mains > 0:
-                relative_data[corp_ticker]["IMP"] += stat.total_fats / total_mains
+            if corp_ticker in data_imp:  # Check if corp_ticker is in data_imp
+                data_imp[corp_ticker][stat.fleet_type.name] += stat.total_fats
+                if total_mains > 0:
+                    relative_data[corp_ticker]["IMP"] += stat.total_fats / total_mains
+            else:
+                logger.warning(
+                    f"Ticker {corp_ticker} not found in data_imp, skipping stat."
+                )
 
     df_afat = pd.DataFrame(data_afat).T.fillna(0)
     df_imp = pd.DataFrame(data_imp).T.fillna(0)
@@ -1129,6 +1164,8 @@ def corp_charts(month, year):
 
 def raw_data_view(month, year):
     raw_data = {}
+    top_afat_users = []
+    top_combined_users = []
 
     try:
         ally = EveonlineEveallianceinfo.objects.get(
@@ -1142,6 +1179,8 @@ def raw_data_view(month, year):
         .exclude(corporation_id__in=settings.STATS_IGNORE_CORPS)
         .order_by("corporation_name")
     )
+
+    user_data = []
 
     for corp in all_corps:
         corp_members = AuthenticationUserprofile.objects.filter(
@@ -1171,6 +1210,15 @@ def raw_data_view(month, year):
             main_to_data[main_character]["afat_total"] += afat_total
             main_to_data[main_character]["imp_total"] += imp_total
 
+            # Collect user data for top 5 calculations
+            user_data.append(
+                {
+                    "name": main_character,
+                    "afat_total": afat_total,
+                    "combined_total": afat_total + imp_total,
+                }
+            )
+
         corp_data = sorted(
             [
                 {
@@ -1185,4 +1233,14 @@ def raw_data_view(month, year):
 
         raw_data[corp.corporation_name] = corp_data
 
-    return raw_data
+    # Sort the user data and get top 5
+    top_afat_users = sorted(user_data, key=lambda x: x["afat_total"], reverse=True)[:5]
+    top_combined_users = sorted(
+        user_data, key=lambda x: x["combined_total"], reverse=True
+    )[:5]
+
+    return {
+        "raw_data": raw_data,
+        "top_afat_users": top_afat_users,
+        "top_combined_users": top_combined_users,
+    }
